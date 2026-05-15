@@ -1,0 +1,795 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Badminton Direction Randomizer</title>
+  <style>
+    :root {
+      --bg: #020617;
+      --panel: #111827;
+      --panel-2: #1f2937;
+      --text: #f9fafb;
+      --muted: #9ca3af;
+      --accent: #38bdf8;
+      --danger: #fb7185;
+      --warn: #fbbf24;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      justify-content: center;
+      align-items: stretch;
+    }
+
+    button, input { font: inherit; }
+
+    .app {
+      width: min(100%, 960px);
+      min-height: 100vh;
+      padding: 16px;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      gap: 16px;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(1.2rem, 3vw, 2rem);
+      line-height: 1.1;
+    }
+
+    .sub {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+
+    .screen {
+      border-radius: 28px;
+      background: #111827;
+      border: 1px solid rgba(255,255,255,.12);
+      box-shadow: 0 20px 60px rgba(0,0,0,.35);
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      overflow: hidden;
+      min-height: 460px;
+    }
+
+    .statusbar {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 12px;
+      padding: 14px 18px;
+      color: rgba(255,255,255,.85);
+      background: rgba(0,0,0,.22);
+      font-size: clamp(.95rem, 2.5vw, 1.25rem);
+      font-weight: 700;
+      z-index: 2;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .statusbar > div {
+      width: 100%;
+      text-align: center;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: clip;
+    }
+
+    .stage {
+      display: grid;
+      place-items: center;
+      text-align: center;
+      padding: 16px;
+      position: relative;
+      transition: background .12s linear;
+    }
+
+    .cue { width: 100%; }
+
+    .direction {
+      font-size: clamp(10rem, 55vw, 30rem);
+      line-height: .78;
+      font-weight: 1000;
+      text-shadow: 0 12px 48px rgba(0,0,0,.35);
+      user-select: none;
+    }
+
+    .label {
+      margin-top: 18px;
+      font-size: clamp(2.6rem, 14vw, 8rem);
+      font-weight: 1000;
+      letter-spacing: .02em;
+      line-height: .92;
+      text-transform: uppercase;
+      text-shadow: 0 8px 32px rgba(0,0,0,.35);
+    }
+
+    .phase {
+      margin-top: 18px;
+      color: rgba(255,255,255,.88);
+      font-size: clamp(1.2rem, 5vw, 2.2rem);
+      font-weight: 800;
+    }
+
+    .countdown {
+      position: absolute;
+      right: 24px;
+      bottom: 16px;
+      color: var(--warn);
+      font-size: clamp(3rem, 18vw, 9rem);
+      font-weight: 1000;
+      opacity: .98;
+      text-shadow: 0 8px 28px rgba(0,0,0,.45);
+    }
+
+    .progress-wrap {
+      height: 12px;
+      background: rgba(255,255,255,.12);
+    }
+
+    .progress {
+      height: 100%;
+      width: 0%;
+      background: rgba(255,255,255,.9);
+      transition: width .08s linear;
+    }
+
+    .controls {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+
+    .card {
+      background: rgba(17,24,39,.82);
+      border: 1px solid rgba(255,255,255,.1);
+      border-radius: 18px;
+      padding: 14px;
+    }
+
+    label {
+      display: grid;
+      gap: 6px;
+      color: var(--muted);
+      font-size: .92rem;
+    }
+
+    input {
+      width: 100%;
+      border: 1px solid rgba(255,255,255,.14);
+      border-radius: 12px;
+      padding: 10px 12px;
+      background: var(--panel-2);
+      color: var(--text);
+      outline: none;
+    }
+
+    input:focus { border-color: var(--accent); }
+
+    .buttons {
+      display: grid;
+      grid-template-columns: 1.2fr 1fr 1fr;
+      gap: 12px;
+    }
+
+    button {
+      border: 0;
+      border-radius: 16px;
+      padding: 14px 16px;
+      background: var(--panel-2);
+      color: var(--text);
+      font-weight: 900;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+
+    button.primary { background: var(--accent); color: #082f49; }
+    button.danger { background: var(--danger); color: #3f0712; }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+
+    .hint {
+      color: var(--muted);
+      font-size: .9rem;
+      text-align: center;
+    }
+
+    .front-left { background: #2563eb; }
+    .front-right { background: #0891b2; }
+    .left { background: #16a34a; }
+    .right { background: #ca8a04; }
+    .back-left { background: #9333ea; }
+    .back-right { background: #dc2626; }
+    .microbreak { background: #0f172a; }
+    .rest { background: #334155; }
+    .ready { background: #111827; }
+    .done { background: #047857; }
+
+    body.fullscreen .app {
+      width: 100%;
+      max-width: none;
+      padding: 0;
+      gap: 0;
+    }
+
+    body.fullscreen header,
+    body.fullscreen .controls,
+    body.fullscreen .buttons,
+    body.fullscreen .hint {
+      display: none;
+    }
+
+    body.fullscreen .screen {
+      min-height: 100vh;
+      border-radius: 0;
+      border: 0;
+    }
+
+    body.fullscreen .statusbar {
+      font-size: clamp(1rem, 5vw, 2rem);
+      padding: 12px 16px;
+    }
+
+    body.fullscreen .direction { font-size: clamp(13rem, 72vw, 38rem); }
+    body.fullscreen .label { font-size: clamp(3.4rem, 17vw, 10rem); }
+
+    @media (max-width: 720px) {
+      .controls { grid-template-columns: 1fr 1fr; }
+      .buttons { grid-template-columns: 1fr; }
+      .statusbar { grid-template-columns: 1fr 1fr 1fr; }
+    }
+
+    @media (orientation: landscape) and (max-height: 600px) {
+      body.fullscreen .screen { grid-template-rows: auto 1fr 10px; }
+      body.fullscreen .statusbar {
+        padding: 8px 14px;
+        font-size: clamp(.85rem, 2.5vw, 1.35rem);
+      }
+      body.fullscreen .stage { padding: 8px 18px; }
+      body.fullscreen .cue {
+        display: grid;
+        grid-template-columns: 1.15fr .85fr;
+        align-items: center;
+        gap: 18px;
+        height: 100%;
+      }
+      body.fullscreen .direction {
+        font-size: clamp(8rem, 34vw, 22rem);
+        line-height: .75;
+      }
+      body.fullscreen .label {
+        margin-top: 0;
+        font-size: clamp(2rem, 8vw, 5.5rem);
+        line-height: .9;
+      }
+      body.fullscreen .phase {
+        margin-top: 12px;
+        font-size: clamp(1rem, 3.5vw, 2rem);
+      }
+      body.fullscreen .countdown {
+        right: 18px;
+        bottom: 10px;
+        font-size: clamp(2.5rem, 10vw, 7rem);
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <header>
+      <div>
+        <h1>Badminton Direction Randomizer</h1>
+        <div class="sub">Hands-free random footwork cues with active/passive breaks and countdown.</div>
+      </div>
+    </header>
+
+    <section class="screen">
+      <div class="statusbar">
+        <div id="setInfo">Set 0 / 0</div>
+        <div id="intervalInfo">Cue 0 / 0</div>
+        <div id="timerInfo">Ready</div>
+      </div>
+
+      <div class="stage ready" id="stage">
+        <div class="cue">
+          <div class="direction" id="directionArrow">↕</div>
+          <div>
+            <div class="label" id="directionLabel">READY</div>
+            <div class="phase" id="phaseLabel">Configure and press start</div>
+          </div>
+        </div>
+        <div class="countdown" id="countdown"></div>
+      </div>
+
+      <div class="progress-wrap">
+        <div class="progress" id="progress"></div>
+      </div>
+    </section>
+
+    <section class="controls card">
+      <label>
+        Time between directions (s)
+        <input id="workSeconds" type="number" min="0.5" step="0.5" value="2.0" />
+      </label>
+
+      <label>
+        Micro break between directions (s)
+        <input id="microBreakSeconds" type="number" min="0" step="0.1" value="0.3" />
+      </label>
+
+      <label>
+        Directions per set
+        <input id="directionsPerSet" type="number" min="1" step="1" value="30" />
+      </label>
+
+      <label>
+        Number of sets
+        <input id="totalSets" type="number" min="1" step="1" value="4" />
+      </label>
+
+      <label>
+        Active break between sets (s)
+        <input id="activeBreakSeconds" type="number" min="0" step="1" value="30" />
+      </label>
+
+      <label>
+        Passive break after active break (s)
+        <input id="setRestSeconds" type="number" min="0" step="1" value="30" />
+      </label>
+
+      <label>
+        Countdown before start / next set (s)
+        <input id="countdownSeconds" type="number" min="0" step="0.5" value="5" />
+      </label>
+
+      <label>
+        Active break label
+        <input id="activeBreakLabel" type="text" value="ROPE" />
+      </label>
+
+      <label>
+        Beep frequency (Hz)
+        <input id="directionHz" type="number" min="100" step="50" value="880" />
+      </label>
+    </section>
+
+    <section class="buttons">
+      <button class="primary" id="startBtn">Start</button>
+      <button id="fullscreenBtn">Fullscreen</button>
+      <button class="danger" id="stopBtn" disabled>Stop</button>
+    </section>
+
+    <div class="hint">Tip: On Android, tap Start once to unlock audio. Add this page to your home screen from the browser menu.</div>
+  </main>
+
+  <script>
+    const directions = [
+      { label: "FRONT LEFT", arrow: "↖", cls: "front-left", zone: "front" },
+      { label: "FRONT RIGHT", arrow: "↗", cls: "front-right", zone: "front" },
+      { label: "LEFT", arrow: "←", cls: "left", zone: "middle" },
+      { label: "RIGHT", arrow: "→", cls: "right", zone: "middle" },
+      { label: "BACK LEFT", arrow: "↙", cls: "back-left", zone: "back" },
+      { label: "BACK RIGHT", arrow: "↘", cls: "back-right", zone: "back" }
+    ];
+
+    const $ = (id) => document.getElementById(id);
+
+    const els = {
+      workSeconds: $("workSeconds"),
+      microBreakSeconds: $("microBreakSeconds"),
+      directionsPerSet: $("directionsPerSet"),
+      totalSets: $("totalSets"),
+      activeBreakSeconds: $("activeBreakSeconds"),
+      setRestSeconds: $("setRestSeconds"),
+      countdownSeconds: $("countdownSeconds"),
+      activeBreakLabel: $("activeBreakLabel"),
+      directionHz: $("directionHz"),
+      startBtn: $("startBtn"),
+      stopBtn: $("stopBtn"),
+      fullscreenBtn: $("fullscreenBtn"),
+      setInfo: $("setInfo"),
+      intervalInfo: $("intervalInfo"),
+      timerInfo: $("timerInfo"),
+      stage: $("stage"),
+      directionArrow: $("directionArrow"),
+      directionLabel: $("directionLabel"),
+      phaseLabel: $("phaseLabel"),
+      countdown: $("countdown"),
+      progress: $("progress")
+    };
+
+    let audioCtx = null;
+    let running = false;
+    let timeoutId = null;
+    let tickId = null;
+    let beepIds = [];
+
+    function readNumber(input, fallback) {
+      const x = Number(input.value);
+      return Number.isFinite(x) ? x : fallback;
+    }
+
+    function getConfig() {
+      return {
+        workMs: Math.max(200, readNumber(els.workSeconds, 2) * 1000),
+        microBreakMs: Math.max(0, readNumber(els.microBreakSeconds, 0.3) * 1000),
+        directionsPerSet: Math.max(1, Math.floor(readNumber(els.directionsPerSet, 30))),
+        totalSets: Math.max(1, Math.floor(readNumber(els.totalSets, 4))),
+        activeBreakMs: Math.max(0, readNumber(els.activeBreakSeconds, 30) * 1000),
+        passiveBreakMs: Math.max(0, readNumber(els.setRestSeconds, 30) * 1000),
+        countdownMs: Math.max(0, readNumber(els.countdownSeconds, 5) * 1000),
+        activeBreakLabel: els.activeBreakLabel.value.trim() || "ACTIVE",
+        directionHz: Math.max(100, readNumber(els.directionHz, 880))
+      };
+    }
+
+    function initAudio() {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextClass) return;
+      if (!audioCtx) audioCtx = new AudioContextClass();
+      if (audioCtx.state === "suspended") audioCtx.resume();
+    }
+
+    function beep(freq, duration = 0.08, volume = 0.18) {
+      if (!audioCtx) return;
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      const now = audioCtx.currentTime;
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(freq, now);
+      gain.gain.setValueAtTime(volume, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start(now);
+      osc.stop(now + duration);
+    }
+
+    function clearPhaseTimers() {
+      if (timeoutId !== null) clearTimeout(timeoutId);
+      if (tickId !== null) clearInterval(tickId);
+      timeoutId = null;
+      tickId = null;
+    }
+
+    function clearAllTimers() {
+      clearPhaseTimers();
+      beepIds.forEach(clearTimeout);
+      beepIds = [];
+    }
+
+    function setStage(cls) {
+      els.stage.className = "stage " + cls;
+    }
+
+    function formatSeconds(ms) {
+      const seconds = Math.max(0, ms / 1000);
+      return seconds.toFixed(1).padStart(4, "0") + "s";
+    }
+
+    function setProgress(elapsed, total) {
+      const pct = total <= 0 ? 0 : Math.min(100, Math.max(0, (elapsed / total) * 100));
+      els.progress.style.width = pct + "%";
+    }
+
+    function runPhase(durationMs, onTick, onDone) {
+      clearPhaseTimers();
+      const start = performance.now();
+
+      function tick() {
+        const elapsed = Math.min(performance.now() - start, durationMs);
+        onTick(elapsed, durationMs);
+      }
+
+      tick();
+      tickId = setInterval(tick, 80);
+      timeoutId = setTimeout(() => {
+        clearPhaseTimers();
+        onTick(durationMs, durationMs);
+        onDone();
+      }, durationMs);
+    }
+
+    function chooseRandom(list) {
+      return list[Math.floor(Math.random() * list.length)];
+    }
+
+    function randomDirection(previous) {
+      if (!previous) return chooseRandom(directions);
+
+      const r = Math.random();
+      let candidates;
+
+      if (r < 0.50) {
+        if (previous.zone === "front") candidates = directions.filter(d => d.zone === "back");
+        else if (previous.zone === "back") candidates = directions.filter(d => d.zone === "front");
+        else candidates = directions.filter(d => d.zone !== "middle");
+      } else if (r < 0.80) {
+        if (previous.zone === "middle") candidates = directions.filter(d => d.zone !== "middle");
+        else candidates = directions.filter(d => d.zone === previous.zone && d.label !== previous.label);
+      } else {
+        candidates = directions.filter(d => d.zone === "middle" && d.label !== previous.label);
+      }
+
+      if (!candidates || candidates.length === 0) {
+        candidates = directions.filter(d => d.label !== previous.label);
+      }
+
+      return chooseRandom(candidates);
+    }
+
+    function scheduleCountdownBeeps(totalMs, countdownMs, baseHz) {
+      beepIds.forEach(clearTimeout);
+      beepIds = [];
+      if (totalMs <= 0 || countdownMs <= 0) return;
+
+      const activeMs = Math.min(totalMs, countdownMs);
+      const firstDelay = Math.max(0, totalMs - activeMs);
+      const n = Math.max(1, Math.ceil(activeMs / 1000));
+
+      for (let i = 0; i < n; i++) {
+        const id = setTimeout(() => {
+          if (!running) return;
+          const remainingBeeps = n - i;
+          if (remainingBeeps === 1) {
+            beep(baseHz * 1.4, 0.08, 0.22);
+            const second = setTimeout(() => running && beep(baseHz * 1.8, 0.08, 0.22), 130);
+            beepIds.push(second);
+          } else if (remainingBeeps <= 3) {
+            beep(baseHz * 1.15, 0.07, 0.20);
+          } else {
+            beep(baseHz * 0.60, 0.06, 0.16);
+          }
+        }, firstDelay + i * 1000);
+        beepIds.push(id);
+      }
+    }
+
+    function startWorkout() {
+      initAudio();
+      const cfg = getConfig();
+      running = true;
+      clearAllTimers();
+      els.startBtn.disabled = true;
+      els.stopBtn.disabled = false;
+
+      let setNo = 1;
+      let cueNo = 0;
+      let previous = null;
+
+      function nextCue() {
+        if (!running) return;
+
+        if (cueNo >= cfg.directionsPerSet) {
+          if (setNo >= cfg.totalSets) finishWorkout();
+          else activeBreak();
+          return;
+        }
+
+        cueNo += 1;
+        const d = randomDirection(previous);
+        previous = d;
+
+        els.setInfo.textContent = `Set ${setNo} / ${cfg.totalSets}`;
+        els.intervalInfo.textContent = `Cue ${cueNo} / ${cfg.directionsPerSet}`;
+        els.timerInfo.textContent = formatSeconds(cfg.workMs);
+        els.directionArrow.textContent = d.arrow;
+        els.directionLabel.textContent = d.label;
+        els.phaseLabel.textContent = "GO";
+        els.countdown.textContent = "";
+        setStage(d.cls);
+        setProgress(0, cfg.workMs);
+        beep(cfg.directionHz, 0.11, 0.24);
+
+        runPhase(
+          cfg.workMs,
+          (elapsed, total) => {
+            els.timerInfo.textContent = formatSeconds(total - elapsed);
+            setProgress(elapsed, total);
+          },
+          microBreak
+        );
+      }
+
+      function microBreak() {
+        if (!running) return;
+        if (cfg.microBreakMs <= 0) {
+          nextCue();
+          return;
+        }
+
+        setStage("microbreak");
+        els.directionArrow.textContent = "•";
+        els.directionLabel.textContent = "";
+        els.phaseLabel.textContent = "";
+        els.countdown.textContent = "";
+        els.timerInfo.textContent = formatSeconds(cfg.microBreakMs);
+        setProgress(0, cfg.microBreakMs);
+        beep(cfg.directionHz * 0.7, 0.06, 0.18);
+
+        runPhase(
+          cfg.microBreakMs,
+          (elapsed, total) => {
+            els.timerInfo.textContent = formatSeconds(total - elapsed);
+            setProgress(elapsed, total);
+          },
+          nextCue
+        );
+      }
+
+      function activeBreak() {
+        if (!running) return;
+        if (cfg.activeBreakMs <= 0) {
+          passiveBreak();
+          return;
+        }
+
+        setStage("rest");
+        els.directionArrow.textContent = "•";
+        els.directionLabel.textContent = cfg.activeBreakLabel;
+        els.phaseLabel.textContent = `Active break → set ${setNo + 1} / ${cfg.totalSets}`;
+        els.countdown.textContent = "";
+        els.intervalInfo.textContent = `Cue ${cfg.directionsPerSet} / ${cfg.directionsPerSet}`;
+        els.timerInfo.textContent = "Active " + formatSeconds(cfg.activeBreakMs);
+        setProgress(0, cfg.activeBreakMs);
+        beep(cfg.directionHz * 0.8, 0.08, 0.18);
+
+        runPhase(
+          cfg.activeBreakMs,
+          (elapsed, total) => {
+            els.timerInfo.textContent = "Active " + formatSeconds(total - elapsed);
+            setProgress(elapsed, total);
+          },
+          passiveBreak
+        );
+      }
+
+      function passiveBreak() {
+        if (!running) return;
+        if (cfg.passiveBreakMs <= 0) {
+          advanceSet();
+          return;
+        }
+
+        setStage("rest");
+        els.directionArrow.textContent = "•";
+        els.directionLabel.textContent = "REST";
+        els.phaseLabel.textContent = `Passive break → set ${setNo + 1} / ${cfg.totalSets}`;
+        els.countdown.textContent = "";
+        els.intervalInfo.textContent = `Cue ${cfg.directionsPerSet} / ${cfg.directionsPerSet}`;
+        els.timerInfo.textContent = "Rest " + formatSeconds(cfg.passiveBreakMs);
+        setProgress(0, cfg.passiveBreakMs);
+
+        runPhase(
+          cfg.passiveBreakMs,
+          (elapsed, total) => {
+            els.timerInfo.textContent = "Rest " + formatSeconds(total - elapsed);
+            setProgress(elapsed, total);
+          },
+          advanceSet
+        );
+      }
+
+      function advanceSet() {
+        setNo += 1;
+        cueNo = 0;
+        previous = null;
+        preSetCountdown();
+      }
+
+      function preSetCountdown() {
+        if (!running) return;
+        if (cfg.countdownMs <= 0) {
+          nextCue();
+          return;
+        }
+
+        setStage("rest");
+        els.setInfo.textContent = `Set ${setNo} / ${cfg.totalSets}`;
+        els.intervalInfo.textContent = `Cue 0 / ${cfg.directionsPerSet}`;
+        els.directionArrow.textContent = "•";
+        els.directionLabel.textContent = setNo === 1 ? "GET READY" : "READY";
+        els.phaseLabel.textContent = setNo === 1 ? "Get into position" : `Next set: ${setNo} / ${cfg.totalSets}`;
+        els.timerInfo.textContent = formatSeconds(cfg.countdownMs);
+        els.countdown.textContent = "";
+        setProgress(0, cfg.countdownMs);
+        scheduleCountdownBeeps(cfg.countdownMs, cfg.countdownMs, cfg.directionHz);
+
+        runPhase(
+          cfg.countdownMs,
+          (elapsed, total) => {
+            const remainingMs = Math.max(0, total - elapsed);
+            els.timerInfo.textContent = formatSeconds(remainingMs);
+            setProgress(elapsed, total);
+            const n = Math.ceil(remainingMs / 1000);
+            els.countdown.textContent = n > 0 ? String(n) : "";
+          },
+          () => {
+            beepIds.forEach(clearTimeout);
+            beepIds = [];
+            nextCue();
+          }
+        );
+      }
+
+      preSetCountdown();
+    }
+
+    function finishWorkout() {
+      running = false;
+      clearAllTimers();
+      els.startBtn.disabled = false;
+      els.stopBtn.disabled = true;
+      els.setInfo.textContent = "Done";
+      els.intervalInfo.textContent = "";
+      els.timerInfo.textContent = "Finished";
+      els.directionArrow.textContent = "✓";
+      els.directionLabel.textContent = "DONE";
+      els.phaseLabel.textContent = "Good work";
+      els.countdown.textContent = "";
+      els.progress.style.width = "100%";
+      setStage("done");
+      beep(660, 0.12, 0.18);
+      setTimeout(() => beep(880, 0.12, 0.18), 160);
+    }
+
+    function stopWorkout() {
+      running = false;
+      clearAllTimers();
+      els.startBtn.disabled = false;
+      els.stopBtn.disabled = true;
+      els.setInfo.textContent = "Set 0 / 0";
+      els.intervalInfo.textContent = "Cue 0 / 0";
+      els.timerInfo.textContent = "Ready";
+      els.directionArrow.textContent = "↕";
+      els.directionLabel.textContent = "READY";
+      els.phaseLabel.textContent = "Configure and press start";
+      els.countdown.textContent = "";
+      els.progress.style.width = "0%";
+      setStage("ready");
+    }
+
+    async function toggleFullscreen() {
+      try {
+        if (!document.fullscreenElement) await document.documentElement.requestFullscreen();
+        else await document.exitFullscreen();
+      } catch (err) {
+        document.body.classList.toggle("fullscreen");
+      }
+    }
+
+    document.addEventListener("fullscreenchange", () => {
+      const active = Boolean(document.fullscreenElement);
+      document.body.classList.toggle("fullscreen", active);
+      els.fullscreenBtn.textContent = active ? "Exit fullscreen" : "Fullscreen";
+    });
+
+    els.startBtn.addEventListener("click", startWorkout);
+    els.stopBtn.addEventListener("click", stopWorkout);
+    els.fullscreenBtn.addEventListener("click", toggleFullscreen);
+
+    window.addEventListener("keydown", (event) => {
+      if (event.code === "Space") {
+        event.preventDefault();
+        running ? stopWorkout() : startWorkout();
+      }
+      if (event.key.toLowerCase() === "f") toggleFullscreen();
+    });
+  </script>
+</body>
+</html>
