@@ -324,7 +324,7 @@
     <section class="controls card">
       <label>
         Time between directions (s)
-        <input id="workSeconds" type="number" min="0.5" step="0.5" value="2.0" />
+        <input id="workSeconds" type="number" min="0.5" step="0.5" value="2.5" />
       </label>
 
       <label>
@@ -339,17 +339,17 @@
 
       <label>
         Number of sets
-        <input id="totalSets" type="number" min="1" step="1" value="4" />
+        <input id="totalSets" type="number" min="1" step="1" value="15" />
       </label>
 
       <label>
         Active break between sets (s)
-        <input id="activeBreakSeconds" type="number" min="0" step="1" value="30" />
+        <input id="activeBreakSeconds" type="number" min="0" step="1" value="20" />
       </label>
 
       <label>
         Passive break after active break (s)
-        <input id="setRestSeconds" type="number" min="0" step="1" value="30" />
+        <input id="setRestSeconds" type="number" min="0" step="1" value="20" />
       </label>
 
       <label>
@@ -359,7 +359,7 @@
 
       <label>
         Active break label
-        <input id="activeBreakLabel" type="text" value="ROPE" />
+        <input id="activeBreakLabel" type="text" value="JUMP" />
       </label>
 
       <label>
@@ -418,6 +418,7 @@
     let timeoutId = null;
     let tickId = null;
     let beepIds = [];
+    let wakeLock = null;
 
     function readNumber(input, fallback) {
       const x = Number(input.value);
@@ -458,6 +459,23 @@
       gain.connect(audioCtx.destination);
       osc.start(now);
       osc.stop(now + duration);
+    }
+
+    async function requestWakeLock() {
+      if (!("wakeLock" in navigator)) return;
+      try {
+        wakeLock = await navigator.wakeLock.request("screen");
+      } catch (err) {
+        wakeLock = null;
+      }
+    }
+
+    async function releaseWakeLock() {
+      if (!wakeLock) return;
+      try {
+        await wakeLock.release();
+      } catch (err) {}
+      wakeLock = null;
     }
 
     function clearPhaseTimers() {
@@ -512,6 +530,8 @@
     function randomDirection(previous) {
       if (!previous) return chooseRandom(directions);
 
+      if (Math.random() < 0.06) return previous;
+
       const r = Math.random();
       let candidates;
 
@@ -562,6 +582,8 @@
 
     function startWorkout() {
       initAudio();
+      requestWakeLock();
+
       const cfg = getConfig();
       running = true;
       clearAllTimers();
@@ -704,7 +726,7 @@
         els.intervalInfo.textContent = `Cue 0 / ${cfg.directionsPerSet}`;
         els.directionArrow.textContent = "•";
         els.directionLabel.textContent = setNo === 1 ? "GET READY" : "READY";
-        els.phaseLabel.textContent = setNo === 1 ? "Get into position" : `Next set: ${setNo} / ${cfg.totalSets}`;
+        els.phaseLabel.textContent = setNo === 1 ? "Get into position" : `Get ready for set ${setNo} / ${cfg.totalSets}`;
         els.timerInfo.textContent = formatSeconds(cfg.countdownMs);
         els.countdown.textContent = "";
         setProgress(0, cfg.countdownMs);
@@ -733,6 +755,7 @@
     function finishWorkout() {
       running = false;
       clearAllTimers();
+      releaseWakeLock();
       els.startBtn.disabled = false;
       els.stopBtn.disabled = true;
       els.setInfo.textContent = "Done";
@@ -751,6 +774,7 @@
     function stopWorkout() {
       running = false;
       clearAllTimers();
+      releaseWakeLock();
       els.startBtn.disabled = false;
       els.stopBtn.disabled = true;
       els.setInfo.textContent = "Set 0 / 0";
@@ -777,11 +801,22 @@
       const active = Boolean(document.fullscreenElement);
       document.body.classList.toggle("fullscreen", active);
       els.fullscreenBtn.textContent = active ? "Exit fullscreen" : "Fullscreen";
+      if (active && running) requestWakeLock();
+    });
+
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible" && running) requestWakeLock();
     });
 
     els.startBtn.addEventListener("click", startWorkout);
     els.stopBtn.addEventListener("click", stopWorkout);
     els.fullscreenBtn.addEventListener("click", toggleFullscreen);
+
+    els.stage.addEventListener("click", () => {
+      const pseudoFullscreen = document.body.classList.contains("fullscreen");
+      if (!document.fullscreenElement && !pseudoFullscreen) return;
+      running ? stopWorkout() : startWorkout();
+    });
 
     window.addEventListener("keydown", (event) => {
       if (event.code === "Space") {
