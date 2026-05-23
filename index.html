@@ -323,8 +323,28 @@
 
     <section class="controls card">
       <label>
-        Time between directions (s)
-        <input id="workSeconds" type="number" min="0.5" step="0.5" value="2.5" />
+        Minimum rally interval (s)
+        <input id="workSecondsMin" type="number" min="0.3" step="0.1" value="1.2" />
+      </label>
+
+      <label>
+        Maximum rally interval (s)
+        <input id="workSecondsMax" type="number" min="0.3" step="0.1" value="2.0" />
+      </label>
+
+      <label>
+        Opponent → direction delay min (ms)
+        <input id="reactionDelayMin" type="number" min="0" step="10" value="250" />
+      </label>
+
+      <label>
+        Opponent → direction delay max (ms)
+        <input id="reactionDelayMax" type="number" min="0" step="10" value="450" />
+      </label>
+
+      <label>
+        Hold cue probability (%)
+        <input id="holdProbability" type="number" min="0" max="100" step="1" value="5" />
       </label>
 
       <label>
@@ -339,17 +359,17 @@
 
       <label>
         Number of sets
-        <input id="totalSets" type="number" min="1" step="1" value="15" />
+        <input id="totalSets" type="number" min="1" step="1" value="4" />
       </label>
 
       <label>
         Active break between sets (s)
-        <input id="activeBreakSeconds" type="number" min="0" step="1" value="20" />
+        <input id="activeBreakSeconds" type="number" min="0" step="1" value="30" />
       </label>
 
       <label>
         Passive break after active break (s)
-        <input id="setRestSeconds" type="number" min="0" step="1" value="20" />
+        <input id="setRestSeconds" type="number" min="0" step="1" value="30" />
       </label>
 
       <label>
@@ -359,7 +379,7 @@
 
       <label>
         Active break label
-        <input id="activeBreakLabel" type="text" value="JUMP" />
+        <input id="activeBreakLabel" type="text" value="ROPE" />
       </label>
 
       <label>
@@ -390,7 +410,11 @@
     const $ = (id) => document.getElementById(id);
 
     const els = {
-      workSeconds: $("workSeconds"),
+      workSecondsMin: $("workSecondsMin"),
+      workSecondsMax: $("workSecondsMax"),
+      reactionDelayMin: $("reactionDelayMin"),
+      reactionDelayMax: $("reactionDelayMax"),
+      holdProbability: $("holdProbability"),
       microBreakSeconds: $("microBreakSeconds"),
       directionsPerSet: $("directionsPerSet"),
       totalSets: $("totalSets"),
@@ -427,7 +451,11 @@
 
     function getConfig() {
       return {
-        workMs: Math.max(200, readNumber(els.workSeconds, 2) * 1000),
+        workMinMs: Math.max(200, readNumber(els.workSecondsMin, 1.2) * 1000),
+        workMaxMs: Math.max(200, readNumber(els.workSecondsMax, 2.0) * 1000),
+        reactionDelayMinMs: Math.max(0, readNumber(els.reactionDelayMin, 250)),
+        reactionDelayMaxMs: Math.max(0, readNumber(els.reactionDelayMax, 450)),
+        holdProbability: Math.max(0, Math.min(1, readNumber(els.holdProbability, 5) / 100)),
         microBreakMs: Math.max(0, readNumber(els.microBreakSeconds, 0.3) * 1000),
         directionsPerSet: Math.max(1, Math.floor(readNumber(els.directionsPerSet, 30))),
         totalSets: Math.max(1, Math.floor(readNumber(els.totalSets, 4))),
@@ -527,6 +555,29 @@
       return list[Math.floor(Math.random() * list.length)];
     }
 
+    function randomBetween(min, max) {
+      return min + Math.random() * (max - min);
+    }
+
+    function weightedWorkDuration(cfg) {
+      const r = Math.random();
+      const min = cfg.workMinMs;
+      const max = cfg.workMaxMs;
+
+      // Mostly medium tempo.
+      if (r < 0.70) {
+        return randomBetween(min + 0.25 * (max - min), min + 0.65 * (max - min));
+      }
+
+      // Fast exchanges.
+      if (r < 0.90) {
+        return randomBetween(min, min + 0.30 * (max - min));
+      }
+
+      // Longer pause / slower rally.
+      return randomBetween(min + 0.65 * (max - min), max);
+    }
+
     function randomDirection(previous) {
       if (!previous) return chooseRandom(directions);
 
@@ -604,27 +655,59 @@
         }
 
         cueNo += 1;
+
         const d = randomDirection(previous);
         previous = d;
 
+        const workMs = weightedWorkDuration(cfg);
+        const isHoldCue = Math.random() < cfg.holdProbability;
+        const reactionDelay = isHoldCue
+          ? randomBetween(cfg.reactionDelayMaxMs * 1.2, cfg.reactionDelayMaxMs * 2.0)
+          : randomBetween(cfg.reactionDelayMinMs, cfg.reactionDelayMaxMs);
+
+        // Opponent cue.
         els.setInfo.textContent = `Set ${setNo} / ${cfg.totalSets}`;
         els.intervalInfo.textContent = `Cue ${cueNo} / ${cfg.directionsPerSet}`;
-        els.timerInfo.textContent = formatSeconds(cfg.workMs);
-        els.directionArrow.textContent = d.arrow;
-        els.directionLabel.textContent = d.label;
-        els.phaseLabel.textContent = "GO";
+        els.directionArrow.textContent = "•";
+        els.directionLabel.textContent = isHoldCue ? "HOLD" : "SPLIT";
+        els.phaseLabel.textContent = "Opponent hit";
         els.countdown.textContent = "";
-        setStage(d.cls);
-        setProgress(0, cfg.workMs);
-        beep(cfg.directionHz, 0.11, 0.24);
+        els.timerInfo.textContent = formatSeconds(reactionDelay);
+        setStage("rest");
+        setProgress(0, reactionDelay);
+
+        // Opponent impact beep.
+        beep(cfg.directionHz * 0.9, 0.09, 0.22);
 
         runPhase(
-          cfg.workMs,
+          reactionDelay,
           (elapsed, total) => {
             els.timerInfo.textContent = formatSeconds(total - elapsed);
             setProgress(elapsed, total);
           },
-          microBreak
+          () => {
+            if (!running) return;
+
+            els.setInfo.textContent = `Set ${setNo} / ${cfg.totalSets}`;
+            els.intervalInfo.textContent = `Cue ${cueNo} / ${cfg.directionsPerSet}`;
+            els.timerInfo.textContent = formatSeconds(workMs);
+            els.directionArrow.textContent = d.arrow;
+            els.directionLabel.textContent = d.label;
+            els.phaseLabel.textContent = "GO";
+            els.countdown.textContent = "";
+            setStage(d.cls);
+            setProgress(0, workMs);
+            beep(cfg.directionHz, 0.11, 0.24);
+
+            runPhase(
+              workMs,
+              (elapsed, total) => {
+                els.timerInfo.textContent = formatSeconds(total - elapsed);
+                setProgress(elapsed, total);
+              },
+              microBreak
+            );
+          }
         );
       }
 
@@ -828,3 +911,4 @@
   </script>
 </body>
 </html>
+
