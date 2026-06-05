@@ -215,7 +215,6 @@
     .right { background: #ca8a04; }
     .back-left { background: #9333ea; }
     .back-right { background: #dc2626; }
-    .microbreak { background: #0f172a; }
     .rest { background: #334155; }
     .ready { background: #111827; }
     .done { background: #047857; }
@@ -294,7 +293,7 @@
     <header>
       <div>
         <h1>Badminton Direction Randomizer</h1>
-        <div class="sub">Hands-free random footwork cues with active/passive breaks and countdown.</div>
+        <div class="sub">Hands-free footwork cues with opponent-contact timing, active/passive breaks, and countdown.</div>
       </div>
     </header>
 
@@ -323,23 +322,33 @@
 
     <section class="controls card">
       <label>
-        Minimum rally interval (s)
-        <input id="workSecondsMin" type="number" min="0.3" step="0.1" value="1.2" />
+        Direction cue → simulated shot min (s)
+        <input id="moveShotSecondsMin" type="number" min="0.1" step="0.05" value="0.90" />
       </label>
 
       <label>
-        Maximum rally interval (s)
-        <input id="workSecondsMax" type="number" min="0.3" step="0.1" value="2.0" />
+        Direction cue → simulated shot max (s)
+        <input id="moveShotSecondsMax" type="number" min="0.1" step="0.05" value="1.10" />
       </label>
 
       <label>
-        Opponent → direction delay min (ms)
-        <input id="reactionDelayMin" type="number" min="0" step="10" value="250" />
+        Recovery + stable base min (s)
+        <input id="workSecondsMin" type="number" min="0.3" step="0.05" value="1.00" />
       </label>
 
       <label>
-        Opponent → direction delay max (ms)
-        <input id="reactionDelayMax" type="number" min="0" step="10" value="450" />
+        Recovery + stable base max (s)
+        <input id="workSecondsMax" type="number" min="0.3" step="0.05" value="1.50" />
+      </label>
+
+      <label>
+        Opponent contact → direction cue min (ms)
+        <input id="reactionDelayMin" type="number" min="0" step="10" value="100" />
+      </label>
+
+      <label>
+        Opponent contact → direction cue max (ms)
+        <input id="reactionDelayMax" type="number" min="0" step="10" value="200" />
       </label>
 
       <label>
@@ -347,10 +356,6 @@
         <input id="holdProbability" type="number" min="0" max="100" step="1" value="5" />
       </label>
 
-      <label>
-        Micro break between directions (s)
-        <input id="microBreakSeconds" type="number" min="0" step="0.1" value="0.3" />
-      </label>
 
       <label>
         Directions per set
@@ -386,6 +391,11 @@
         Beep frequency (Hz)
         <input id="directionHz" type="number" min="100" step="50" value="880" />
       </label>
+
+      <label>
+        Beep volume (%)
+        <input id="beepVolume" type="number" min="0" max="100" step="5" value="85" />
+      </label>
     </section>
 
     <section class="buttons">
@@ -394,7 +404,7 @@
       <button class="danger" id="stopBtn" disabled>Stop</button>
     </section>
 
-    <div class="hint">Tip: On Android, tap Start once to unlock audio. Add this page to your home screen from the browser menu.</div>
+    <div class="hint">Tip: Move to the shown corner, simulate your shot, then recover. The opponent-hit beep is your checkpoint: be grounded and stable before the next direction cue.</div>
   </main>
 
   <script>
@@ -410,12 +420,13 @@
     const $ = (id) => document.getElementById(id);
 
     const els = {
+      moveShotSecondsMin: $("moveShotSecondsMin"),
+      moveShotSecondsMax: $("moveShotSecondsMax"),
       workSecondsMin: $("workSecondsMin"),
       workSecondsMax: $("workSecondsMax"),
       reactionDelayMin: $("reactionDelayMin"),
       reactionDelayMax: $("reactionDelayMax"),
       holdProbability: $("holdProbability"),
-      microBreakSeconds: $("microBreakSeconds"),
       directionsPerSet: $("directionsPerSet"),
       totalSets: $("totalSets"),
       activeBreakSeconds: $("activeBreakSeconds"),
@@ -423,6 +434,7 @@
       countdownSeconds: $("countdownSeconds"),
       activeBreakLabel: $("activeBreakLabel"),
       directionHz: $("directionHz"),
+      beepVolume: $("beepVolume"),
       startBtn: $("startBtn"),
       stopBtn: $("stopBtn"),
       fullscreenBtn: $("fullscreenBtn"),
@@ -451,19 +463,21 @@
 
     function getConfig() {
       return {
-        workMinMs: Math.max(200, readNumber(els.workSecondsMin, 1.2) * 1000),
-        workMaxMs: Math.max(200, readNumber(els.workSecondsMax, 2.0) * 1000),
-        reactionDelayMinMs: Math.max(0, readNumber(els.reactionDelayMin, 250)),
-        reactionDelayMaxMs: Math.max(0, readNumber(els.reactionDelayMax, 450)),
+        moveShotMinMs: Math.max(100, readNumber(els.moveShotSecondsMin, 0.90) * 1000),
+        moveShotMaxMs: Math.max(100, readNumber(els.moveShotSecondsMax, 1.10) * 1000),
+        workMinMs: Math.max(200, readNumber(els.workSecondsMin, 1.00) * 1000),
+        workMaxMs: Math.max(200, readNumber(els.workSecondsMax, 1.50) * 1000),
+        reactionDelayMinMs: Math.max(0, readNumber(els.reactionDelayMin, 100)),
+        reactionDelayMaxMs: Math.max(0, readNumber(els.reactionDelayMax, 200)),
         holdProbability: Math.max(0, Math.min(1, readNumber(els.holdProbability, 5) / 100)),
-        microBreakMs: Math.max(0, readNumber(els.microBreakSeconds, 0.3) * 1000),
         directionsPerSet: Math.max(1, Math.floor(readNumber(els.directionsPerSet, 30))),
         totalSets: Math.max(1, Math.floor(readNumber(els.totalSets, 4))),
         activeBreakMs: Math.max(0, readNumber(els.activeBreakSeconds, 30) * 1000),
         passiveBreakMs: Math.max(0, readNumber(els.setRestSeconds, 30) * 1000),
         countdownMs: Math.max(0, readNumber(els.countdownSeconds, 5) * 1000),
         activeBreakLabel: els.activeBreakLabel.value.trim() || "ACTIVE",
-        directionHz: Math.max(100, readNumber(els.directionHz, 880))
+        directionHz: Math.max(100, readNumber(els.directionHz, 880)),
+        beepVolume: Math.max(0, Math.min(1, readNumber(els.beepVolume, 85) / 100))
       };
     }
 
@@ -474,14 +488,15 @@
       if (audioCtx.state === "suspended") audioCtx.resume();
     }
 
-    function beep(freq, duration = 0.08, volume = 0.18) {
+    function beep(freq, duration = 0.08, volume = 0.65, type = "square") {
       if (!audioCtx) return;
       const osc = audioCtx.createOscillator();
       const gain = audioCtx.createGain();
       const now = audioCtx.currentTime;
-      osc.type = "sine";
+      const v = Math.max(0.001, Math.min(1.0, volume));
+      osc.type = type;
       osc.frequency.setValueAtTime(freq, now);
-      gain.gain.setValueAtTime(volume, now);
+      gain.gain.setValueAtTime(v, now);
       gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
       osc.connect(gain);
       gain.connect(audioCtx.destination);
@@ -560,22 +575,12 @@
     }
 
     function weightedWorkDuration(cfg) {
-      const r = Math.random();
-      const min = cfg.workMinMs;
-      const max = cfg.workMaxMs;
-
-      // Mostly medium tempo.
-      if (r < 0.70) {
-        return randomBetween(min + 0.25 * (max - min), min + 0.65 * (max - min));
-      }
-
-      // Fast exchanges.
-      if (r < 0.90) {
-        return randomBetween(min, min + 0.30 * (max - min));
-      }
-
-      // Longer pause / slower rally.
-      return randomBetween(min + 0.65 * (max - min), max);
+      // Recovery window from your simulated shot to opponent contact.
+      // Keep this simple and interpretable: every value in the configured
+      // range is equally likely.
+      const min = Math.min(cfg.workMinMs, cfg.workMaxMs);
+      const max = Math.max(cfg.workMinMs, cfg.workMaxMs);
+      return randomBetween(min, max);
     }
 
     function randomDirection(previous) {
@@ -604,7 +609,7 @@
       return chooseRandom(candidates);
     }
 
-    function scheduleCountdownBeeps(totalMs, countdownMs, baseHz) {
+    function scheduleCountdownBeeps(totalMs, countdownMs, baseHz, volume) {
       beepIds.forEach(clearTimeout);
       beepIds = [];
       if (totalMs <= 0 || countdownMs <= 0) return;
@@ -618,13 +623,13 @@
           if (!running) return;
           const remainingBeeps = n - i;
           if (remainingBeeps === 1) {
-            beep(baseHz * 1.4, 0.08, 0.22);
-            const second = setTimeout(() => running && beep(baseHz * 1.8, 0.08, 0.22), 130);
+            beep(baseHz * 1.4, 0.08, volume);
+            const second = setTimeout(() => running && beep(baseHz * 1.8, 0.08, volume), 130);
             beepIds.push(second);
           } else if (remainingBeeps <= 3) {
-            beep(baseHz * 1.15, 0.07, 0.20);
+            beep(baseHz * 1.15, 0.07, volume * 0.95);
           } else {
-            beep(baseHz * 0.60, 0.06, 0.16);
+            beep(baseHz * 0.60, 0.06, volume * 0.80);
           }
         }, firstDelay + i * 1000);
         beepIds.push(id);
@@ -659,82 +664,87 @@
         const d = randomDirection(previous);
         previous = d;
 
+        const moveShotMs = randomBetween(
+          Math.min(cfg.moveShotMinMs, cfg.moveShotMaxMs),
+          Math.max(cfg.moveShotMinMs, cfg.moveShotMaxMs)
+        );
         const workMs = weightedWorkDuration(cfg);
         const isHoldCue = Math.random() < cfg.holdProbability;
         const reactionDelay = isHoldCue
           ? randomBetween(cfg.reactionDelayMaxMs * 1.2, cfg.reactionDelayMaxMs * 2.0)
           : randomBetween(cfg.reactionDelayMinMs, cfg.reactionDelayMaxMs);
 
-        // Opponent cue.
+        // Direction cue: move to the corner and simulate your shot.
         els.setInfo.textContent = `Set ${setNo} / ${cfg.totalSets}`;
         els.intervalInfo.textContent = `Cue ${cueNo} / ${cfg.directionsPerSet}`;
-        els.directionArrow.textContent = "•";
-        els.directionLabel.textContent = isHoldCue ? "HOLD" : "SPLIT";
-        els.phaseLabel.textContent = "Opponent hit";
+        els.timerInfo.textContent = formatSeconds(moveShotMs);
+        els.directionArrow.textContent = d.arrow;
+        els.directionLabel.textContent = d.label;
+        els.phaseLabel.textContent = "GO → move + shot";
         els.countdown.textContent = "";
-        els.timerInfo.textContent = formatSeconds(reactionDelay);
-        setStage("rest");
-        setProgress(0, reactionDelay);
-
-        // Opponent impact beep.
-        beep(cfg.directionHz * 0.9, 0.09, 0.22);
+        setStage(d.cls);
+        setProgress(0, moveShotMs);
+        beep(cfg.directionHz, 0.11, cfg.beepVolume);
 
         runPhase(
-          reactionDelay,
+          moveShotMs,
           (elapsed, total) => {
             els.timerInfo.textContent = formatSeconds(total - elapsed);
             setProgress(elapsed, total);
           },
-          () => {
-            if (!running) return;
-
-            els.setInfo.textContent = `Set ${setNo} / ${cfg.totalSets}`;
-            els.intervalInfo.textContent = `Cue ${cueNo} / ${cfg.directionsPerSet}`;
-            els.timerInfo.textContent = formatSeconds(workMs);
-            els.directionArrow.textContent = d.arrow;
-            els.directionLabel.textContent = d.label;
-            els.phaseLabel.textContent = "GO";
-            els.countdown.textContent = "";
-            setStage(d.cls);
-            setProgress(0, workMs);
-            beep(cfg.directionHz, 0.11, 0.24);
-
-            runPhase(
-              workMs,
-              (elapsed, total) => {
-                els.timerInfo.textContent = formatSeconds(total - elapsed);
-                setProgress(elapsed, total);
-              },
-              microBreak
-            );
-          }
+          recoveryPhase
         );
-      }
 
-      function microBreak() {
-        if (!running) return;
-        if (cfg.microBreakMs <= 0) {
-          nextCue();
-          return;
+        function recoveryPhase() {
+          if (!running) return;
+
+          // Recovery window: your simulated shot has happened; recover before opponent contact.
+          els.setInfo.textContent = `Set ${setNo} / ${cfg.totalSets}`;
+          els.intervalInfo.textContent = `Cue ${cueNo} / ${cfg.directionsPerSet}`;
+          els.directionArrow.textContent = "•";
+          els.directionLabel.textContent = "RECOVER";
+          els.phaseLabel.textContent = "Recover → opponent contact";
+          els.countdown.textContent = "";
+          els.timerInfo.textContent = formatSeconds(workMs);
+          setStage("microbreak");
+          setProgress(0, workMs);
+
+          runPhase(
+            workMs,
+            (elapsed, total) => {
+              els.timerInfo.textContent = formatSeconds(total - elapsed);
+              setProgress(elapsed, total);
+            },
+            opponentContact
+          );
         }
 
-        setStage("microbreak");
-        els.directionArrow.textContent = "•";
-        els.directionLabel.textContent = "";
-        els.phaseLabel.textContent = "";
-        els.countdown.textContent = "";
-        els.timerInfo.textContent = formatSeconds(cfg.microBreakMs);
-        setProgress(0, cfg.microBreakMs);
-        beep(cfg.directionHz * 0.7, 0.06, 0.18);
+        function opponentContact() {
+          if (!running) return;
 
-        runPhase(
-          cfg.microBreakMs,
-          (elapsed, total) => {
-            els.timerInfo.textContent = formatSeconds(total - elapsed);
-            setProgress(elapsed, total);
-          },
-          nextCue
-        );
+          // Opponent-contact cue: you should already be stable/loaded here.
+          els.setInfo.textContent = `Set ${setNo} / ${cfg.totalSets}`;
+          els.intervalInfo.textContent = `Cue ${cueNo} / ${cfg.directionsPerSet}`;
+          els.directionArrow.textContent = "•";
+          els.directionLabel.textContent = isHoldCue ? "HOLD" : "SPLIT";
+          els.phaseLabel.textContent = "Opponent hit — be stable now";
+          els.countdown.textContent = "";
+          els.timerInfo.textContent = formatSeconds(reactionDelay);
+          setStage("rest");
+          setProgress(0, reactionDelay);
+
+          // Louder, distinct opponent-impact beep.
+          beep(cfg.directionHz * 0.9, 0.12, cfg.beepVolume, "square");
+
+          runPhase(
+            reactionDelay,
+            (elapsed, total) => {
+              els.timerInfo.textContent = formatSeconds(total - elapsed);
+              setProgress(elapsed, total);
+            },
+            nextCue
+          );
+        }
       }
 
       function activeBreak() {
@@ -752,7 +762,7 @@
         els.intervalInfo.textContent = `Cue ${cfg.directionsPerSet} / ${cfg.directionsPerSet}`;
         els.timerInfo.textContent = "Active " + formatSeconds(cfg.activeBreakMs);
         setProgress(0, cfg.activeBreakMs);
-        beep(cfg.directionHz * 0.8, 0.08, 0.18);
+        beep(cfg.directionHz * 0.8, 0.08, cfg.beepVolume * 0.75);
 
         runPhase(
           cfg.activeBreakMs,
@@ -813,7 +823,7 @@
         els.timerInfo.textContent = formatSeconds(cfg.countdownMs);
         els.countdown.textContent = "";
         setProgress(0, cfg.countdownMs);
-        scheduleCountdownBeeps(cfg.countdownMs, cfg.countdownMs, cfg.directionHz);
+        scheduleCountdownBeeps(cfg.countdownMs, cfg.countdownMs, cfg.directionHz, cfg.beepVolume);
 
         runPhase(
           cfg.countdownMs,
@@ -850,8 +860,8 @@
       els.countdown.textContent = "";
       els.progress.style.width = "100%";
       setStage("done");
-      beep(660, 0.12, 0.18);
-      setTimeout(() => beep(880, 0.12, 0.18), 160);
+      beep(660, 0.12, 0.65);
+      setTimeout(() => beep(880, 0.12, 0.65), 160);
     }
 
     function stopWorkout() {
