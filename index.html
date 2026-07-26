@@ -215,6 +215,7 @@
     .right { background: #ca8a04; }
     .back-left { background: #9333ea; }
     .back-right { background: #dc2626; }
+    .split { background: #be185d; }
     .rest { background: #334155; }
     .ready { background: #111827; }
     .done { background: #047857; }
@@ -293,7 +294,7 @@
     <header>
       <div>
         <h1>Badminton Direction Randomizer</h1>
-        <div class="sub">Hands-free footwork cues with opponent-contact timing, active/passive breaks, and countdown.</div>
+        <div class="sub">Hands-free footwork cues with contact-to-contact timing, active/passive breaks, and countdown.</div>
       </div>
     </header>
 
@@ -322,38 +323,13 @@
 
     <section class="controls card">
       <label>
-        Direction cue → simulated shot min (s)
-        <input id="moveShotSecondsMin" type="number" min="0.1" step="0.05" value="0.90" />
+        Shot time min (s)
+        <input id="shotTimeSecondsMin" type="number" min="0.3" step="0.05" value="0.80" />
       </label>
 
       <label>
-        Direction cue → simulated shot max (s)
-        <input id="moveShotSecondsMax" type="number" min="0.1" step="0.05" value="1.10" />
-      </label>
-
-      <label>
-        Recovery + stable base min (s)
-        <input id="workSecondsMin" type="number" min="0.3" step="0.05" value="1.00" />
-      </label>
-
-      <label>
-        Recovery + stable base max (s)
-        <input id="workSecondsMax" type="number" min="0.3" step="0.05" value="1.50" />
-      </label>
-
-      <label>
-        Opponent contact → direction cue min (ms)
-        <input id="reactionDelayMin" type="number" min="0" step="10" value="100" />
-      </label>
-
-      <label>
-        Opponent contact → direction cue max (ms)
-        <input id="reactionDelayMax" type="number" min="0" step="10" value="200" />
-      </label>
-
-      <label>
-        Hold cue probability (%)
-        <input id="holdProbability" type="number" min="0" max="100" step="1" value="5" />
+        Shot time max (s)
+        <input id="shotTimeSecondsMax" type="number" min="0.3" step="0.05" value="1.20" />
       </label>
 
 
@@ -404,7 +380,7 @@
       <button class="danger" id="stopBtn" disabled>Stop</button>
     </section>
 
-    <div class="hint">Tip: Move to the shown corner, simulate your shot, then recover. The opponent-hit beep is your checkpoint: be grounded and stable before the next direction cue.</div>
+    <div class="hint">Tip: Each shot interval is sampled from the range above. The final 250 ms are reserved for preparing the split step before the next direction cue.</div>
   </main>
 
   <script>
@@ -418,15 +394,11 @@
     ];
 
     const $ = (id) => document.getElementById(id);
+    const PREPARATION_MS = 250;
 
     const els = {
-      moveShotSecondsMin: $("moveShotSecondsMin"),
-      moveShotSecondsMax: $("moveShotSecondsMax"),
-      workSecondsMin: $("workSecondsMin"),
-      workSecondsMax: $("workSecondsMax"),
-      reactionDelayMin: $("reactionDelayMin"),
-      reactionDelayMax: $("reactionDelayMax"),
-      holdProbability: $("holdProbability"),
+      shotTimeSecondsMin: $("shotTimeSecondsMin"),
+      shotTimeSecondsMax: $("shotTimeSecondsMax"),
       directionsPerSet: $("directionsPerSet"),
       totalSets: $("totalSets"),
       activeBreakSeconds: $("activeBreakSeconds"),
@@ -455,6 +427,7 @@
     let tickId = null;
     let beepIds = [];
     let wakeLock = null;
+    let wakeLockRetryId = null;
 
     function readNumber(input, fallback) {
       const x = Number(input.value);
@@ -463,13 +436,8 @@
 
     function getConfig() {
       return {
-        moveShotMinMs: Math.max(100, readNumber(els.moveShotSecondsMin, 0.90) * 1000),
-        moveShotMaxMs: Math.max(100, readNumber(els.moveShotSecondsMax, 1.10) * 1000),
-        workMinMs: Math.max(200, readNumber(els.workSecondsMin, 1.00) * 1000),
-        workMaxMs: Math.max(200, readNumber(els.workSecondsMax, 1.50) * 1000),
-        reactionDelayMinMs: Math.max(0, readNumber(els.reactionDelayMin, 100)),
-        reactionDelayMaxMs: Math.max(0, readNumber(els.reactionDelayMax, 200)),
-        holdProbability: Math.max(0, Math.min(1, readNumber(els.holdProbability, 5) / 100)),
+        shotTimeMinMs: Math.max(PREPARATION_MS, readNumber(els.shotTimeSecondsMin, 0.80) * 1000),
+        shotTimeMaxMs: Math.max(PREPARATION_MS, readNumber(els.shotTimeSecondsMax, 1.20) * 1000),
         directionsPerSet: Math.max(1, Math.floor(readNumber(els.directionsPerSet, 30))),
         totalSets: Math.max(1, Math.floor(readNumber(els.totalSets, 4))),
         activeBreakMs: Math.max(0, readNumber(els.activeBreakSeconds, 30) * 1000),
@@ -505,15 +473,28 @@
     }
 
     async function requestWakeLock() {
-      if (!("wakeLock" in navigator)) return;
+      if (!running || document.visibilityState !== "visible" || !("wakeLock" in navigator)) return;
+      if (wakeLock && !wakeLock.released) return;
+
       try {
-        wakeLock = await navigator.wakeLock.request("screen");
+        const lock = await navigator.wakeLock.request("screen");
+        wakeLock = lock;
+
+        lock.addEventListener("release", () => {
+          if (wakeLock === lock) wakeLock = null;
+          if (!running || document.visibilityState !== "visible") return;
+
+          clearTimeout(wakeLockRetryId);
+          wakeLockRetryId = setTimeout(requestWakeLock, 250);
+        }, { once: true });
       } catch (err) {
         wakeLock = null;
       }
     }
 
     async function releaseWakeLock() {
+      clearTimeout(wakeLockRetryId);
+      wakeLockRetryId = null;
       if (!wakeLock) return;
       try {
         await wakeLock.release();
@@ -574,13 +555,26 @@
       return min + Math.random() * (max - min);
     }
 
-    function weightedWorkDuration(cfg) {
-      // Recovery window from your simulated shot to opponent contact.
-      // Keep this simple and interpretable: every value in the configured
-      // range is equally likely.
-      const min = Math.min(cfg.workMinMs, cfg.workMaxMs);
-      const max = Math.max(cfg.workMinMs, cfg.workMaxMs);
-      return randomBetween(min, max);
+    function randomShotTime(cfg, previous, next) {
+      const min = Math.min(cfg.shotTimeMinMs, cfg.shotTimeMaxMs);
+      const max = Math.max(cfg.shotTimeMinMs, cfg.shotTimeMaxMs);
+      const range = max - min;
+      if (range <= 0 || !previous || !next) return randomBetween(min, max);
+
+      const frontBack =
+        (previous.zone === "front" && next.zone === "back") ||
+        (previous.zone === "back" && next.zone === "front");
+      const shortTransition =
+        previous.label === next.label ||
+        previous.zone === "middle" ||
+        next.zone === "middle";
+
+      const u = Math.random();
+      if (frontBack) return min + range * (1 - u * u);
+      if (shortTransition) return min + range * u * u;
+
+      // Lateral transitions within the front or rear court remain neutral.
+      return min + range * u;
     }
 
     function randomDirection(previous) {
@@ -638,10 +632,9 @@
 
     function startWorkout() {
       initAudio();
-      requestWakeLock();
-
       const cfg = getConfig();
       running = true;
+      requestWakeLock();
       clearAllTimers();
       els.startBtn.disabled = true;
       els.stopBtn.disabled = false;
@@ -661,18 +654,17 @@
 
         cueNo += 1;
 
-        const d = randomDirection(previous);
+        const oldDirection = previous;
+        const d = randomDirection(oldDirection);
         previous = d;
 
-        const moveShotMs = randomBetween(
-          Math.min(cfg.moveShotMinMs, cfg.moveShotMaxMs),
-          Math.max(cfg.moveShotMinMs, cfg.moveShotMaxMs)
-        );
-        const workMs = weightedWorkDuration(cfg);
-        const isHoldCue = Math.random() < cfg.holdProbability;
-        const reactionDelay = isHoldCue
-          ? randomBetween(cfg.reactionDelayMaxMs * 1.2, cfg.reactionDelayMaxMs * 2.0)
-          : randomBetween(cfg.reactionDelayMinMs, cfg.reactionDelayMaxMs);
+        // Bias movement time by the spatial transition while keeping the
+        // opponent's reply interval inside the same configured range. The
+        // reply interval is split into recovery and a fixed preparation
+        // window immediately before opponent contact.
+        const moveShotMs = randomShotTime(cfg, oldDirection, d);
+        const replyShotMs = randomShotTime(cfg, null, null);
+        const recoveryMs = Math.max(0, replyShotMs - PREPARATION_MS);
 
         // Direction cue: move to the corner and simulate your shot.
         els.setInfo.textContent = `Set ${setNo} / ${cfg.totalSets}`;
@@ -698,46 +690,49 @@
         function recoveryPhase() {
           if (!running) return;
 
-          // Recovery window: your simulated shot has happened; recover before opponent contact.
+          // Your simulated shot has happened. Recover until the fixed
+          // preparation window immediately before opponent contact.
           els.setInfo.textContent = `Set ${setNo} / ${cfg.totalSets}`;
           els.intervalInfo.textContent = `Cue ${cueNo} / ${cfg.directionsPerSet}`;
           els.directionArrow.textContent = "•";
           els.directionLabel.textContent = "RECOVER";
-          els.phaseLabel.textContent = "Recover → opponent contact";
+          els.phaseLabel.textContent = "Recover → prepare";
           els.countdown.textContent = "";
-          els.timerInfo.textContent = formatSeconds(workMs);
+          els.timerInfo.textContent = formatSeconds(recoveryMs);
           setStage("microbreak");
-          setProgress(0, workMs);
+          setProgress(0, recoveryMs);
 
           runPhase(
-            workMs,
+            recoveryMs,
             (elapsed, total) => {
               els.timerInfo.textContent = formatSeconds(total - elapsed);
               setProgress(elapsed, total);
             },
-            opponentContact
+            preparationPhase
           );
         }
 
-        function opponentContact() {
+        function preparationPhase() {
           if (!running) return;
 
-          // Opponent-contact cue: you should already be stable/loaded here.
+          // Reserve the final 250 ms before opponent contact for the split
+          // step. The next direction cue coincides with opponent contact.
           els.setInfo.textContent = `Set ${setNo} / ${cfg.totalSets}`;
           els.intervalInfo.textContent = `Cue ${cueNo} / ${cfg.directionsPerSet}`;
           els.directionArrow.textContent = "•";
-          els.directionLabel.textContent = isHoldCue ? "HOLD" : "SPLIT";
-          els.phaseLabel.textContent = "Opponent hit — be stable now";
+          els.directionLabel.textContent = "SPLIT";
+          els.phaseLabel.textContent = "Prepare → opponent contact";
           els.countdown.textContent = "";
-          els.timerInfo.textContent = formatSeconds(reactionDelay);
-          setStage("rest");
-          setProgress(0, reactionDelay);
+          els.timerInfo.textContent = formatSeconds(PREPARATION_MS);
+          setStage("split");
+          setProgress(0, PREPARATION_MS);
 
-          // Louder, distinct opponent-impact beep.
+          // Distinct preparation beep; the direction beep in nextCue marks
+          // opponent contact 250 ms later.
           beep(cfg.directionHz * 0.9, 0.12, cfg.beepVolume, "square");
 
           runPhase(
-            reactionDelay,
+            PREPARATION_MS,
             (elapsed, total) => {
               els.timerInfo.textContent = formatSeconds(total - elapsed);
               setProgress(elapsed, total);
@@ -894,11 +889,19 @@
       const active = Boolean(document.fullscreenElement);
       document.body.classList.toggle("fullscreen", active);
       els.fullscreenBtn.textContent = active ? "Exit fullscreen" : "Fullscreen";
-      if (active && running) requestWakeLock();
+      if (running) requestWakeLock();
     });
 
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "visible" && running) requestWakeLock();
+    });
+
+    window.addEventListener("focus", () => {
+      if (running) requestWakeLock();
+    });
+
+    window.addEventListener("pageshow", () => {
+      if (running) requestWakeLock();
     });
 
     els.startBtn.addEventListener("click", startWorkout);
@@ -921,4 +924,3 @@
   </script>
 </body>
 </html>
-
