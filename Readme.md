@@ -65,3 +65,9 @@ Optimized for phone fullscreen usage with:
 - landscape support
 - stable non-jittering timers
 - color-coded directions
+
+
+# To Dos:
+- [] Better Readme
+- [] Shot combinations for singles/double/mixed
+- [] Variable shot length

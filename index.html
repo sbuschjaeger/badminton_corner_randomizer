@@ -182,6 +182,35 @@
 
     input:focus { border-color: var(--accent); }
 
+    .checkbox-label {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-height: 100%;
+      color: var(--text);
+    }
+
+    .checkbox-label input[type="checkbox"] {
+      width: 1.25rem;
+      height: 1.25rem;
+      margin: 0;
+      flex: 0 0 auto;
+      accent-color: var(--accent);
+    }
+
+    .shot-label {
+      margin-top: 10px;
+      color: rgba(255,255,255,.92);
+      font-size: clamp(3rem, 15vw, 9rem);
+      font-weight: 950;
+      letter-spacing: .04em;
+      line-height: .95;
+      text-transform: uppercase;
+      text-shadow: 0 8px 32px rgba(0,0,0,.35);
+    }
+
+    .shot-label[hidden] { display: none; }
+
     .buttons {
       display: grid;
       grid-template-columns: 1.2fr 1fr 1fr;
@@ -247,6 +276,7 @@
 
     body.fullscreen .direction { font-size: clamp(13rem, 72vw, 38rem); }
     body.fullscreen .label { font-size: clamp(3.4rem, 17vw, 10rem); }
+    body.fullscreen .shot-label { font-size: clamp(4rem, 20vw, 12rem); }
 
     @media (max-width: 720px) {
       .controls { grid-template-columns: 1fr 1fr; }
@@ -276,6 +306,9 @@
         margin-top: 0;
         font-size: clamp(2rem, 8vw, 5.5rem);
         line-height: .9;
+      }
+      body.fullscreen .shot-label {
+        font-size: clamp(2.8rem, 11vw, 7rem);
       }
       body.fullscreen .phase {
         margin-top: 12px;
@@ -310,6 +343,7 @@
           <div class="direction" id="directionArrow">↕</div>
           <div>
             <div class="label" id="directionLabel">READY</div>
+            <div class="shot-label" id="shotLabel" hidden></div>
             <div class="phase" id="phaseLabel">Configure and press start</div>
           </div>
         </div>
@@ -323,15 +357,24 @@
 
     <section class="controls card">
       <label>
-        Shot time min (s)
-        <input id="shotTimeSecondsMin" type="number" min="0.3" step="0.05" value="0.80" />
+        Fast shot time (s)
+        <input id="fastShotSeconds" type="number" min="0.8" step="0.05" value="0.80" />
       </label>
 
       <label>
-        Shot time max (s)
-        <input id="shotTimeSecondsMax" type="number" min="0.3" step="0.05" value="1.20" />
+        Medium shot time (s)
+        <input id="mediumShotSeconds" type="number" min="0.8" step="0.05" value="1.10" />
       </label>
 
+      <label>
+        Slow shot time (s)
+        <input id="slowShotSeconds" type="number" min="0.8" step="0.05" value="1.40" />
+      </label>
+
+      <label class="checkbox-label">
+        <input id="showShotCue" type="checkbox" />
+        Show shot with corner
+      </label>
 
       <label>
         Directions per set
@@ -380,7 +423,7 @@
       <button class="danger" id="stopBtn" disabled>Stop</button>
     </section>
 
-    <div class="hint">Tip: Each shot interval is sampled from the range above. The final 250 ms are reserved for preparing the split step before the next direction cue.</div>
+    <div class="hint">Tip: Transitions imply a fast, medium, or slow shot. The final 250 ms are reserved for preparing the split step before the next direction cue.</div>
   </main>
 
   <script>
@@ -397,8 +440,10 @@
     const PREPARATION_MS = 250;
 
     const els = {
-      shotTimeSecondsMin: $("shotTimeSecondsMin"),
-      shotTimeSecondsMax: $("shotTimeSecondsMax"),
+      fastShotSeconds: $("fastShotSeconds"),
+      mediumShotSeconds: $("mediumShotSeconds"),
+      slowShotSeconds: $("slowShotSeconds"),
+      showShotCue: $("showShotCue"),
       directionsPerSet: $("directionsPerSet"),
       totalSets: $("totalSets"),
       activeBreakSeconds: $("activeBreakSeconds"),
@@ -416,6 +461,7 @@
       stage: $("stage"),
       directionArrow: $("directionArrow"),
       directionLabel: $("directionLabel"),
+      shotLabel: $("shotLabel"),
       phaseLabel: $("phaseLabel"),
       countdown: $("countdown"),
       progress: $("progress")
@@ -427,7 +473,6 @@
     let tickId = null;
     let beepIds = [];
     let wakeLock = null;
-    let wakeLockRetryId = null;
 
     function readNumber(input, fallback) {
       const x = Number(input.value);
@@ -435,9 +480,17 @@
     }
 
     function getConfig() {
+      const enteredTimes = [
+        Math.max(800, readNumber(els.fastShotSeconds, 0.80) * 1000),
+        Math.max(800, readNumber(els.mediumShotSeconds, 1.10) * 1000),
+        Math.max(800, readNumber(els.slowShotSeconds, 1.40) * 1000)
+      ].sort((a, b) => a - b);
+
       return {
-        shotTimeMinMs: Math.max(PREPARATION_MS, readNumber(els.shotTimeSecondsMin, 0.80) * 1000),
-        shotTimeMaxMs: Math.max(PREPARATION_MS, readNumber(els.shotTimeSecondsMax, 1.20) * 1000),
+        fastShotMs: enteredTimes[0],
+        mediumShotMs: enteredTimes[1],
+        slowShotMs: enteredTimes[2],
+        showShotCue: els.showShotCue.checked,
         directionsPerSet: Math.max(1, Math.floor(readNumber(els.directionsPerSet, 30))),
         totalSets: Math.max(1, Math.floor(readNumber(els.totalSets, 4))),
         activeBreakMs: Math.max(0, readNumber(els.activeBreakSeconds, 30) * 1000),
@@ -473,28 +526,15 @@
     }
 
     async function requestWakeLock() {
-      if (!running || document.visibilityState !== "visible" || !("wakeLock" in navigator)) return;
-      if (wakeLock && !wakeLock.released) return;
-
+      if (!("wakeLock" in navigator)) return;
       try {
-        const lock = await navigator.wakeLock.request("screen");
-        wakeLock = lock;
-
-        lock.addEventListener("release", () => {
-          if (wakeLock === lock) wakeLock = null;
-          if (!running || document.visibilityState !== "visible") return;
-
-          clearTimeout(wakeLockRetryId);
-          wakeLockRetryId = setTimeout(requestWakeLock, 250);
-        }, { once: true });
+        wakeLock = await navigator.wakeLock.request("screen");
       } catch (err) {
         wakeLock = null;
       }
     }
 
     async function releaseWakeLock() {
-      clearTimeout(wakeLockRetryId);
-      wakeLockRetryId = null;
       if (!wakeLock) return;
       try {
         await wakeLock.release();
@@ -555,26 +595,63 @@
       return min + Math.random() * (max - min);
     }
 
-    function randomShotTime(cfg, previous, next) {
-      const min = Math.min(cfg.shotTimeMinMs, cfg.shotTimeMaxMs);
-      const max = Math.max(cfg.shotTimeMinMs, cfg.shotTimeMaxMs);
-      const range = max - min;
-      if (range <= 0 || !previous || !next) return randomBetween(min, max);
+    const shotPlans = {
+      front: {
+        front: { label: "NET", timing: "fast" },
+        middle: { label: "PUSH", timing: "medium" },
+        back: { label: "LIFT", timing: "slow" }
+      },
+      middle: {
+        front: { label: "BLOCK", timing: "medium" },
+        middle: { label: "DRIVE", timing: "fast" },
+        back: { label: "LIFT", timing: "slow" }
+      },
+      back: {
+        front: { label: "DROP", timing: "slow" },
+        middle: { label: "SMASH", timing: "slow" },
+        back: { label: "CLEAR", timing: "slow" }
+      }
+    };
 
-      const frontBack =
-        (previous.zone === "front" && next.zone === "back") ||
-        (previous.zone === "back" && next.zone === "front");
-      const shortTransition =
-        previous.label === next.label ||
-        previous.zone === "middle" ||
-        next.zone === "middle";
+    function shotPlanFor(from, to) {
+      if (!from || !to) return { label: "", timing: "medium" };
+      return shotPlans[from.zone][to.zone];
+    }
 
+    function sampleShotTime(cfg, timing) {
+      const fast = cfg.fastShotMs;
+      const medium = cfg.mediumShotMs;
+      const slow = cfg.slowShotMs;
+      const fastUpper = (fast + medium) / 2;
+      const slowLower = (medium + slow) / 2;
       const u = Math.random();
-      if (frontBack) return min + range * (1 - u * u);
-      if (shortTransition) return min + range * u * u;
 
-      // Lateral transitions within the front or rear court remain neutral.
-      return min + range * u;
+      if (timing === "fast") {
+        // Never faster than the configured floor; cluster close to it.
+        return fast + (fastUpper - fast) * u * u;
+      }
+
+      if (timing === "slow") {
+        // Back-court and lifted shots cluster close to the slow anchor.
+        return slowLower + (slow - slowLower) * (1 - u * u);
+      }
+
+      // Triangular distribution around the medium anchor.
+      const width = slowLower - fastUpper;
+      if (width <= 0) return medium;
+      const split = (medium - fastUpper) / width;
+      if (u < split) {
+        return fastUpper + Math.sqrt(u * width * (medium - fastUpper));
+      }
+      return slowLower - Math.sqrt((1 - u) * width * (slowLower - medium));
+    }
+
+    function incomingShotTime(cfg, previous, next) {
+      if (!previous) {
+        const firstTiming = next.zone === "back" ? "slow" : next.zone === "middle" ? "medium" : "fast";
+        return sampleShotTime(cfg, firstTiming);
+      }
+      return sampleShotTime(cfg, shotPlanFor(previous, next).timing);
     }
 
     function randomDirection(previous) {
@@ -632,9 +709,9 @@
 
     function startWorkout() {
       initAudio();
+      requestWakeLock();
       const cfg = getConfig();
       running = true;
-      requestWakeLock();
       clearAllTimers();
       els.startBtn.disabled = true;
       els.stopBtn.disabled = false;
@@ -642,6 +719,7 @@
       let setNo = 1;
       let cueNo = 0;
       let previous = null;
+      let queuedDirection = null;
 
       function nextCue() {
         if (!running) return;
@@ -655,15 +733,16 @@
         cueNo += 1;
 
         const oldDirection = previous;
-        const d = randomDirection(oldDirection);
+        const d = queuedDirection || randomDirection(oldDirection);
+        queuedDirection = randomDirection(d);
+        const shotPlan = shotPlanFor(d, queuedDirection);
         previous = d;
 
-        // Bias movement time by the spatial transition while keeping the
-        // opponent's reply interval inside the same configured range. The
-        // reply interval is split into recovery and a fixed preparation
-        // window immediately before opponent contact.
-        const moveShotMs = randomShotTime(cfg, oldDirection, d);
-        const replyShotMs = randomShotTime(cfg, null, null);
+        // The incoming transition determines the time available to reach this
+        // corner. The displayed shot determines the subsequent recovery time.
+        // Its destination is selected now but remains hidden until the cue.
+        const moveShotMs = incomingShotTime(cfg, oldDirection, d);
+        const replyShotMs = sampleShotTime(cfg, shotPlan.timing);
         const recoveryMs = Math.max(0, replyShotMs - PREPARATION_MS);
 
         // Direction cue: move to the corner and simulate your shot.
@@ -672,7 +751,10 @@
         els.timerInfo.textContent = formatSeconds(moveShotMs);
         els.directionArrow.textContent = d.arrow;
         els.directionLabel.textContent = d.label;
-        els.phaseLabel.textContent = "GO → move + shot";
+        els.shotLabel.textContent = shotPlan.label;
+        els.shotLabel.hidden = !cfg.showShotCue;
+        els.phaseLabel.textContent = "";
+        els.phaseLabel.hidden = true;
         els.countdown.textContent = "";
         setStage(d.cls);
         setProgress(0, moveShotMs);
@@ -696,6 +778,8 @@
           els.intervalInfo.textContent = `Cue ${cueNo} / ${cfg.directionsPerSet}`;
           els.directionArrow.textContent = "•";
           els.directionLabel.textContent = "RECOVER";
+          els.shotLabel.hidden = true;
+          els.phaseLabel.hidden = false;
           els.phaseLabel.textContent = "Recover → prepare";
           els.countdown.textContent = "";
           els.timerInfo.textContent = formatSeconds(recoveryMs);
@@ -721,6 +805,7 @@
           els.intervalInfo.textContent = `Cue ${cueNo} / ${cfg.directionsPerSet}`;
           els.directionArrow.textContent = "•";
           els.directionLabel.textContent = "SPLIT";
+          els.shotLabel.hidden = true;
           els.phaseLabel.textContent = "Prepare → opponent contact";
           els.countdown.textContent = "";
           els.timerInfo.textContent = formatSeconds(PREPARATION_MS);
@@ -799,6 +884,7 @@
         setNo += 1;
         cueNo = 0;
         previous = null;
+        queuedDirection = null;
         preSetCountdown();
       }
 
@@ -851,6 +937,7 @@
       els.timerInfo.textContent = "Finished";
       els.directionArrow.textContent = "✓";
       els.directionLabel.textContent = "DONE";
+      els.shotLabel.hidden = true;
       els.phaseLabel.textContent = "Good work";
       els.countdown.textContent = "";
       els.progress.style.width = "100%";
@@ -870,6 +957,8 @@
       els.timerInfo.textContent = "Ready";
       els.directionArrow.textContent = "↕";
       els.directionLabel.textContent = "READY";
+      els.shotLabel.hidden = true;
+      els.phaseLabel.hidden = false;
       els.phaseLabel.textContent = "Configure and press start";
       els.countdown.textContent = "";
       els.progress.style.width = "0%";
@@ -889,19 +978,11 @@
       const active = Boolean(document.fullscreenElement);
       document.body.classList.toggle("fullscreen", active);
       els.fullscreenBtn.textContent = active ? "Exit fullscreen" : "Fullscreen";
-      if (running) requestWakeLock();
+      if (active && running) requestWakeLock();
     });
 
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "visible" && running) requestWakeLock();
-    });
-
-    window.addEventListener("focus", () => {
-      if (running) requestWakeLock();
-    });
-
-    window.addEventListener("pageshow", () => {
-      if (running) requestWakeLock();
     });
 
     els.startBtn.addEventListener("click", startWorkout);
