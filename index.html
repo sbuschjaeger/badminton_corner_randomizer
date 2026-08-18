@@ -757,9 +757,9 @@
         els.intervalInfo.textContent = `Cue ${cueNo} / ${cfg.directionsPerSet}`;
         els.timerInfo.textContent = formatSeconds(moveShotMs);
         els.directionArrow.textContent = d.arrow;
-        els.directionLabel.textContent = d.label;
+        els.directionLabel.textContent = cfg.showShotCue ? shotPlan.label : d.label;
         els.shotLabel.textContent = shotPlan.label;
-        els.shotLabel.hidden = !cfg.showShotCue;
+        els.shotLabel.hidden = true;
         els.phaseLabel.textContent = "";
         els.phaseLabel.hidden = true;
         els.countdown.textContent = "";
